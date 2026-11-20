@@ -1,0 +1,27 @@
+name: Burgos Windows 11 browser check
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-check:
+    runs-on: windows-11-arm
+    timeout-minutes: 8
+    env:
+      BURGOS_BROWSER_CHANNEL: msedge
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify Windows 11
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance -ClassName Win32_OperatingSystem
+          $os | Select-Object Caption, Version, BuildNumber, OSArchitecture | ConvertTo-Json -Compress
+          if ($os.Caption -notmatch 'Windows 11' -or [int]$os.BuildNumber -lt 22000) {
+            throw 'This job requires a verified Windows 11 host'
+          }
+      - name: Install the pinned Playwright client
+        run: npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.64.1
+      - name: Run anonymous public checks in Microsoft Edge
+        run: node burgos-desktop-smoke.cjs chromium
