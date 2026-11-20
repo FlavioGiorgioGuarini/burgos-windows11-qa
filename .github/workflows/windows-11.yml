@@ -17,11 +17,31 @@ jobs:
         shell: pwsh
         run: |
           $os = Get-CimInstance -ClassName Win32_OperatingSystem
-          $os | Select-Object Caption, Version, BuildNumber, OSArchitecture | ConvertTo-Json -Compress
+          $facts = $os | Select-Object Caption, Version, BuildNumber, OSArchitecture | ConvertTo-Json -Compress
+          Write-Output $facts
           if ($os.Caption -notmatch 'Windows 11' -or [int]$os.BuildNumber -lt 22000) {
             throw 'This job requires a verified Windows 11 host'
           }
+          "BURGOS_WINDOWS_FACTS=$facts" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install the pinned Playwright client
         run: npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.64.1
       - name: Run anonymous public checks in Microsoft Edge
-        run: node burgos-desktop-smoke.cjs chromium
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'burgos-windows-evidence.json'
+          node burgos-desktop-smoke.cjs chromium --out $report
+          $status = $LASTEXITCODE
+          if (Test-Path $report) {
+            Write-Output ('BURGOS_EVIDENCE ' + (Get-Content -Raw $report | ConvertFrom-Json -AsHashtable | ConvertTo-Json -Compress -Depth 20))
+          }
+          exit $status
+      - name: Diagnose public HTTP response
+        if: failure()
+        shell: pwsh
+        run: |
+          try {
+            $response = Invoke-WebRequest -Uri 'https://latejadeburgos.es/aranda-de-duero/' -TimeoutSec 15 -SkipHttpErrorCheck
+            Write-Output ('Direct public HTTP status ' + [int]$response.StatusCode)
+          } catch {
+            Write-Output ('Public GET failed: ' + $_.Exception.Message)
+          }

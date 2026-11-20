@@ -46,8 +46,8 @@ function hostFacts() {
   if (process.platform === 'win32') {
     try {
       const command = 'Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber,OSArchitecture | ConvertTo-Json -Compress';
-      const raw = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
-        {encoding: 'utf8', timeout: 10000, maxBuffer: 65536, windowsHide: true});
+      const raw = process.env.BURGOS_WINDOWS_FACTS || execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
+        {encoding: 'utf8', timeout: 20000, maxBuffer: 65536, windowsHide: true});
       facts.windows = JSON.parse(raw.replace(/^\uFEFF/, '').trim());
     } catch (error) { facts.windowsProbeError = error.message.split('\n')[0]; }
   } else if (process.platform === 'linux' && fs.existsSync('/etc/os-release')) {
@@ -146,7 +146,8 @@ async function destination(page) {
     }});
     const gotoAranda = async () => {
       const response = await page.goto(ARANDA, {waitUntil: 'load'});
-      must(response?.status() === 200 && page.url() === ARANDA, 'Aranda must load anonymously at its exact URL with HTTP 200.');
+      must(response?.status() === 200 && page.url() === ARANDA,
+        'Aranda returned HTTP ' + (response?.status() ?? 'unknown') + ' at ' + page.url() + ' (expected 200 at ' + ARANDA + ').');
       await page.evaluate(() => Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 3000))]));
       const deny = page.locator('#cmplz-cookiebanner-1-optin .cmplz-deny');
       if (await deny.isVisible()) await deny.click();
