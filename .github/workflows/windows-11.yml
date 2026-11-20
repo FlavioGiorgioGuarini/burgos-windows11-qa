@@ -25,7 +25,23 @@ jobs:
           "BURGOS_WINDOWS_FACTS=$facts" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install the pinned Playwright client
         run: npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.64.1
-      - name: Run anonymous public checks in Microsoft Edge
+      - name: Stage two public HTTP 200 responses for desktop replay
+        shell: pwsh
+        run: |
+          $snapshotDir = Join-Path $env:RUNNER_TEMP 'burgos-public-pages'
+          New-Item -ItemType Directory -Path $snapshotDir | Out-Null
+          $pages = @{
+            'aranda.html' = 'https://latejadeburgos.es/aranda-de-duero/'
+            'miranda.html' = 'https://latejadeburgos.es/miranda-de-ebro/'
+          }
+          foreach ($page in $pages.GetEnumerator()) {
+            $file = Join-Path $snapshotDir $page.Key
+            $response = Invoke-WebRequest -Uri $page.Value -TimeoutSec 20 -SkipHttpErrorCheck -OutFile $file -PassThru
+            if ($response.StatusCode -ne 200) { throw ('Public replay source returned ' + $response.StatusCode) }
+            Write-Output ('Public HTML HTTP 200 ' + $page.Value + ' SHA256 ' + (Get-FileHash $file).Hash)
+          }
+          "BURGOS_PUBLIC_HTML_DIR=$snapshotDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Replay public HTML and check actions in Microsoft Edge
         shell: pwsh
         run: |
           $report = Join-Path $env:RUNNER_TEMP 'burgos-windows-evidence.json'

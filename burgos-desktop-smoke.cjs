@@ -13,6 +13,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const {createHash} = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const ORIGIN = 'https://latejadeburgos.es';
 const ARANDA = ORIGIN + '/aranda-de-duero/';
@@ -114,6 +115,16 @@ async function destination(page) {
     catch (error) { report.checks.push({name, pass: false, error: error.message.slice(0, 4000)}); console.error('FAIL ' + name + ': ' + error.message.split('\n')[0]); return false; }
   };
   try {
+    const htmlSnapshots = new Map();
+    if (process.env.BURGOS_PUBLIC_HTML_DIR) {
+      report.mode = 'Public HTML snapshots from an independent HTTP 200 GET, replayed in the actual OS browser. Static resources are requested normally.';
+      for (const [url, file] of [[ARANDA, 'aranda.html'], [MIRANDA, 'miranda.html']]) {
+        const html = fs.readFileSync(path.resolve(process.env.BURGOS_PUBLIC_HTML_DIR, file));
+        must(html.length > 1000 && html.length < 12_000_000, 'Unexpected snapshot size for ' + url);
+        htmlSnapshots.set(url, html);
+      }
+      report.publicHtml = [...htmlSnapshots].map(([url, html]) => ({url, bytes: html.length, sha256: createHash('sha256').update(html).digest('hex')}));
+    }
     if (process.platform === 'win32') await check('Windows OS caption/build from PowerShell', async () => {
       must(report.host.windows?.Caption && report.host.windows?.BuildNumber, 'PowerShell OS probe failed: ' + (report.host.windowsProbeError || 'missing Caption/BuildNumber'));
       return report.host.windows;
@@ -135,6 +146,9 @@ async function destination(page) {
       const clean = new URL(url.href); clean.hash = '';
       const reason = !['GET', 'HEAD'].includes(req.method()) ? 'mutation' : mainDocument && !allowedDocuments.has(clean.href) ? 'unapproved document' : report.requestCount > 600 ? 'request budget' : null;
       if (reason) { report.blocked.push({reason, method: req.method(), origin: url.origin, path: url.pathname, resourceType: req.resourceType()}); return route.abort(); }
+      if (mainDocument && htmlSnapshots.has(clean.href)) {
+        return route.fulfill({status: 200, contentType: 'text/html; charset=UTF-8', body: htmlSnapshots.get(clean.href)});
+      }
       return route.continue();
     });
     page = await context.newPage();
